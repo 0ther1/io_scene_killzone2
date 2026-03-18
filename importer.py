@@ -68,7 +68,10 @@ def create_static_mesh_resource(context, sm: datatypes.StaticMeshResource, paren
         for i, uv_verts in enumerate(uvs):
             uvl = mesh.uv_layers.new(name=f"UV Map {i}")
             for l in mesh.loops:
-                uvl.data[l.index].uv = uv_verts[l.vertex_index][:2]
+                uv = uv_verts[l.vertex_index]
+                if len(uv) == 4:
+                    uv = uv[2:]
+                uvl.data[l.index].uv = uv
 
         obj = bpy.data.objects.new(name, mesh)
         parent.objects.link(obj)
@@ -141,12 +144,14 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
             prepare_index_array(rp.index_array)
             polygons = rp.index_array.indices
 
+        max_vtx = max(max(polygons, key=lambda p: max(p)))
+
         if rp.vertex_array:
             prepare_vertex_array(rp.vertex_array)
             for sf in rp.vertex_array.stream_fields:
                 for ve in sf.vertex_elements:
-                    if datatypes.EVertexElement.VtxElemUV0 >= ve.vertex_element <= datatypes.EVertexElement.VtxElemUV6:
-                        uvs.append(sf.values[ve])
+                    if datatypes.EVertexElement.VtxElemUV0 <= ve.vertex_element <= datatypes.EVertexElement.VtxElemUV6:
+                        uvs.append(sf.values[ve][rp.index_offset:rp.index_offset+max_vtx+1])
 
         name = rp.name or "RenderingPrimitiveResource"
 
@@ -160,7 +165,10 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
         for j, uv_verts in enumerate(uvs):
             uvl = mesh.uv_layers.new(name=f"UV Map {j}")
             for l in mesh.loops:
-                uvl.data[l.index].uv = uv_verts[rp.index_offset+l.vertex_index][:2]
+                uv = uv_verts[l.vertex_index]
+                if len(uv) == 4:
+                    uv = uv[2:]
+                uvl.data[l.index].uv = uv
 
         obj = bpy.data.objects.new(name, mesh)
         parent.objects.link(obj)
