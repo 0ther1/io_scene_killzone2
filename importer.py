@@ -139,12 +139,12 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
         verts = all_verts[i]
         polygons = []
         uvs = []
+        max_vtx = -2
 
         if rp.index_array:
             prepare_index_array(rp.index_array)
             polygons = rp.index_array.indices
-
-        max_vtx = max(max(polygons, key=lambda p: max(p)))
+            max_vtx = max(max(polygons, key=lambda p: max(p)))
 
         if rp.vertex_array:
             prepare_vertex_array(rp.vertex_array)
