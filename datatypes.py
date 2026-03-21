@@ -286,7 +286,8 @@ class SkinnedMeshInstance(GeometryObject):
 
 class SimpleAnimatingSkinnedMeshInstance(SkinnedMeshInstance):
     def read(self, r: Reader, ctx: Context):
-        super().read(r, ctx)       
+        super().read(r, ctx)      
+        r.skip(4) 
         ctx.read_object_ref(r) 
 
 class PhysicsInstance(BaseObject):
