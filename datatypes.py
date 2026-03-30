@@ -49,7 +49,8 @@ class BlendExpression(BaseObject):
     def read(self, r: Reader, ctx: Context):
         super().read(r, ctx)
         ctx.read_string_index(r)
-        r.skip(4*r.read_var_int())
+        if ctx.version >= 158:
+            r.skip(4*r.read_var_int())
 
 class EntityPlaceHolder(BaseObject):
     def read(self, r: Reader, ctx: Context):
@@ -64,7 +65,11 @@ class EntityPlaceHolder(BaseObject):
 
 class RenderEffectInstanceImp1(BaseObject):
     def read(self, r: Reader, ctx: Context):
-        super().read(r, ctx)     
+        super().read(r, ctx)
+        if ctx.version < 158:
+            ctx.read_object_ref(r)
+            ctx.read_object_ref(r)
+            ctx.read_object_ref(r)
         ctx.read_object_ref(r)
 
 class Portal(BaseObject):
@@ -87,6 +92,8 @@ class Zone(BaseObject):
 class WorldNode(BaseObject):
     def read(self, r: Reader, ctx: Context):
         super().read(r, ctx)
+        if ctx.version < 158:
+            r.skip(6)
         ctx.read_object_ref(r)
         r.skip(64)
 
@@ -101,17 +108,24 @@ class GlobalDamageModifier(BaseObject):
         super().read(r, ctx)
         ctx.read_string_index(r)
         r.skip(1)
+
+        if ctx.version < 158:
+            r.skip(6)
+
         for _ in range(r.read_var_int()):
             ctx.read_string_index(r)
             r.skip(2)
             ctx.read_string_index(r)
             r.skip(4)
-            ctx.read_string_index(r)
-            r.skip(4)
+
+            if ctx.version >= 158:
+                ctx.read_string_index(r)
+                r.skip(4)
 
 class DrawableObjectInstance:
     def read(self, r: Reader, ctx: Context):
-        r.skip(12)
+        if ctx.version >= 158:
+            r.skip(12)
 
 class GeometryObject(WorldNode, DrawableObjectInstance):
     def read(self, r: Reader, ctx: Context):
@@ -139,8 +153,11 @@ class MeshHierachyShaderOverrides(BaseObject):
 class StaticMeshInstance(GeometryObject):
     def read(self, r: Reader, ctx: Context):
         super().read(r, ctx)
-        ctx.read_string_index(r)
-        r.skip(1)
+        if ctx.version >= 158:
+            ctx.read_string_index(r)
+            r.skip(1)
+        else:
+            r.skip(4)
         ctx.read_object_ref(r)
         MeshHierachyShaderOverrides().read(r, ctx)
         r.skip(8)
@@ -168,9 +185,10 @@ class SpotLight(LightShadowed):
 class Camera(WorldNode):
     def read(self, r: Reader, ctx: Context):
         super().read(r, ctx)
-        ctx.read_string_index(r)
-        r.skip(1)
-        ctx.read_object_ref(r)
+        if ctx.version >= 158:
+            ctx.read_string_index(r)
+            r.skip(1)
+            ctx.read_object_ref(r)
         r.skip(25)
 
 class LumpOptimizationSettings(BaseObject):
@@ -470,6 +488,8 @@ class Resource(BaseObject):
         super()._parse(r, ctx)
         self.name = ctx.read_string_index(r)
         r.skip(1)
+        if ctx.version < 158:
+            r.skip(6)
 
 class MeshResourceBase(Resource):
     def _parse(self, r: Reader, ctx: Context):
@@ -483,23 +503,17 @@ class PrimitiveResource(Resource):
         self.vertex_array = ctx.read_object_ref(r, True)
         self.index_array = ctx.read_object_ref(r, True)
         self.index_offset = r.unpack(">i")[0]
-        ctx.read_object_ref(r)
 
 class RenderingPrimitiveResource(PrimitiveResource):
     def _parse(self, r: Reader, ctx: Context):
         super()._parse(r, ctx)
-        r.skip(16)
-        ctx.read_object_ref(r, True)
 
 class StaticMeshResource(MeshResourceBase):
     primitives: list[RenderingPrimitiveResource|None]
-    local_translate_scale: tuple[float]
 
     def _parse(self, r: Reader, ctx: Context):
         super()._parse(r, ctx)
         self.primitives = [ctx.read_object_ref(r, True) for _ in range(r.read_var_int())]
-        self.local_translate_scale = r.unpack(">4f")
-        r.skip(21)
 
 class ETextureType(IntEnum):
     _2D = 0
@@ -561,7 +575,10 @@ class Texture(Resource):
         self.type = r.unpack(">i")[0]
         self.format = SurfaceFormat(r)
         self.num_surfaces, self.color_space, self.tex_coord_type = r.unpack(">3i")
-        r.skip(12)
+        if ctx.version < 158:
+            r.skip(8)
+        else:
+            r.skip(12)
         data_size = r.unpack(">i")[0]
         r.skip(120)
         self.data = r.read(data_size)
@@ -601,17 +618,20 @@ class VertexStreamFormat:
     type: int
     num_components: int
 
-    def __init__(self, r: Reader):
-        self.vertex_element, self.offset, self.type, self.num_components, _reserved = r.unpack(">I4B")
+    def __init__(self, r: Reader, ctx: Context):
+        if ctx.version < 158:
+            self.vertex_element, _, self.num_components, self.type, self.offset = r.unpack("<I4B")
+        else:
+            self.vertex_element, self.offset, self.type, self.num_components, _ = r.unpack(">I4B")
 
 class VertexStreamField:
     flags: int
     stride: int
     vertex_elements: list[VertexStreamFormat]
 
-    def __init__(self, r: Reader):
-        self.flags, self.stride, count = r.unpack(">3i")
-        self.vertex_elements = [VertexStreamFormat(r) for _ in range(count)]
+    def __init__(self, r: Reader, ctx: Context, endian: str):
+        self.flags, self.stride, count = r.unpack(endian + "3i")
+        self.vertex_elements = [VertexStreamFormat(r, ctx) for _ in range(count)]
 
 class VertexArrayResource(Resource):
     count: int
@@ -621,20 +641,27 @@ class VertexArrayResource(Resource):
     def _parse(self, r: Reader, ctx: Context):
         super()._parse(r, ctx)
         r.align(self.data_offset)
-        self.count, _, count = r.unpack(">3i")
-        self.stream_fields = [VertexStreamField(r) for _ in range(count)]
 
-        stride = 0
+        endian = ">" if ctx.version >= 158 else "<"
+
+        self.count, _, count = r.unpack(endian + "3i")
+        self.stream_fields = [VertexStreamField(r, ctx, endian) for _ in range(count)]
+
+        data = bytearray()
         for f in self.stream_fields:
-            stride += f.stride
+            r.align(self.data_offset)
+            data += r.read(f.stride*self.count)
 
-        self.data = r.read(stride*self.count)
+        self.data = bytes(data)
 
 class IndexArrayResource(Resource):
     def _parse(self, r: Reader, ctx: Context):
         super()._parse(r, ctx)         
         r.align(self.data_offset)
-        self.count = r.unpack(">i")[0]
+
+        endian = ">" if ctx.version >= 158 else "<"
+
+        self.count = r.unpack(endian + "i")[0]
         r.skip(8)
         self.data = r.read(self.count*2)
 
@@ -652,6 +679,8 @@ class RegularSkinnedMeshResourceSkinInfo(BaseObject):
 class SkinnedMeshBoneBindings(BaseObject):
     def _parse(self, r: Reader, ctx: Context):
         super()._parse(r, ctx)
+        if ctx.version < 158:
+            r.skip(9)
         count = r.read_var_int()
         self.bone_names = [ctx.read_string_index(r) for _ in range(count)]
         r.skip(64*count)
@@ -667,7 +696,11 @@ class RegularSkinnedMeshResource(SkinnedMeshResource):
         super()._parse(r, ctx)     
         r.skip(19)
         self.skinned_mesh_bone_bindings = ctx.read_object_ref(r, True)
-        self.skin_info = ctx.read_object_ref(r, True)
+        if ctx.version < 158:
+            self.skin_info = RegularSkinnedMeshResourceSkinInfo()
+            self.skin_info._parse(r, ctx)
+        else:
+            self.skin_info = ctx.read_object_ref(r, True)
         self.primitives = [ctx.read_object_ref(r, True) for _ in range(r.read_var_int())]
         [ctx.read_object_ref(r) for _ in range(r.read_var_int())]
         self.position_bounds_scale = r.unpack(">3f")
@@ -690,9 +723,9 @@ class Bone:
 class Skeleton(Resource):
     def _parse(self, r: Reader, ctx: Context):
         super()._parse(r, ctx)
-        self.bone_sets = [ctx.read_string_index(r) for _ in range(r.read_var_int())]
-        self.hulls = [ctx.read_object_ref(r) for _ in range(r.read_var_int())]
-        self.nulls_local_bounds = [r.unpack(">6f") for _ in range(r.read_var_int())]
+        self.bone_names = [ctx.read_string_index(r) for _ in range(r.read_var_int())]
+        [ctx.read_object_ref(r) for _ in range(r.read_var_int())]
+        r.skip(r.read_var_int()*24)
         self.ik_controls = [TwoBoneIkControl(r, ctx) for _ in range(r.read_var_int())]
         self.animation_channels = [ctx.read_string_index(r) for _ in range(r.read_var_int())]
         self.edge_anim_skeleton = r.read(r.read_var_int())
@@ -700,10 +733,12 @@ class Skeleton(Resource):
 
         start = -r.tell()
 
+        endian = ">" if ctx.version >= 158 else "<"
+
         r.skip(4+6+2)
         some_count1, bone_count, some_count2 = r.unpack(">3B")
         r.skip(3)
-        strings_chunk_length = r.unpack(">H")[0]
+        strings_chunk_length = r.unpack(endian + "H")[0]
         r.skip(44)
 
         r.align(start, 64)
@@ -716,7 +751,7 @@ class Skeleton(Resource):
         r.align(start, 16)
         bone_infos = []
         for _ in range(bone_count):
-            bone_infos.append((r.unpack(">4f"), r.unpack(">3f"), r.unpack(">2I")))
+            bone_infos.append((r.unpack(endian + "4f"), r.unpack(endian + "3f"), r.unpack(endian + "2I")))
             r.skip(12)
 
         r.align(start, 4)

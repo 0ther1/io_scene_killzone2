@@ -6,8 +6,11 @@ def read_core(filepath: str) -> Context:
     with open(filepath, "rb") as file:
         reader = Reader(file)
 
-        if reader.read(16) != b"RTTIBin<1.58>  \x01":
+        magic = reader.read(16)
+        if not magic.startswith(b"RTTIBin") or magic[-1] != 1:
             raise RuntimeError("Invalid Killzone 2 .core file")
+
+        ctx.version = int(float(magic[8:12])*100)
         
         reader.skip(16)
 

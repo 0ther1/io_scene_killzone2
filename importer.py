@@ -87,6 +87,8 @@ def create_static_mesh_resource(context, sm: datatypes.StaticMeshResource, paren
                 obj.select_set(True)
 
             bpy.ops.object.join()
+            bpy.ops.object.select_all(action='DESELECT')
+            context.view_layer.objects.active = None
 
         main_object.name = name_override or sm.name or "StaticMeshResource"
 
@@ -175,9 +177,11 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
 
         weight_maps = all_weight_maps[i]
 
-        if rsm.skinned_mesh_bone_bindings:
+        bone_names = (rsm.skinned_mesh_bone_bindings and rsm.skinned_mesh_bone_bindings.bone_names) or (rsm.skeleton and rsm.skeleton.bone_names)
+
+        if bone_names:
             for bone_index, weights in weight_maps.items():
-                bone_name = rsm.skinned_mesh_bone_bindings.bone_names[bone_index]
+                bone_name = bone_names[bone_index]
                 vg = obj.vertex_groups.new(name=bone_name)
                 for vtx, weight in weights:
                     vg.add([vtx], weight, "ADD")
@@ -197,6 +201,8 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
                 obj.select_set(True)
 
             bpy.ops.object.join()
+            bpy.ops.object.select_all(action='DESELECT')
+            context.view_layer.objects.active = None
 
         main_object.name = name_override or rsm.name or "RegularSkinnedMeshResource"
 
@@ -285,6 +291,7 @@ def create_skeleton(context, s: datatypes.Skeleton, parent, name_override: str =
             bone.parent = arm.edit_bones[b.parent_name]
 
     bpy.ops.object.mode_set(mode="OBJECT")
+    context.view_layer.objects.active = None
 
     return obj
 

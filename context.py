@@ -18,6 +18,7 @@ class Context:
         self.objects = []
         self.object_dict = dict()
         self.string_banks = dict()
+        self.version = 0
 
     def read_type_names(self, r: Reader):
         count = r.read_var_int()
