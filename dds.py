@@ -2,70 +2,65 @@ from . import datatypes
 from struct import pack
 import numpy as np
 
-BITS_PER_PIXELS = {
-    datatypes.EPixelFormat.INDEX_4: 4,
-    datatypes.EPixelFormat.INDEX_8: 8,
-    datatypes.EPixelFormat.ALPHA_4: 4,
-    datatypes.EPixelFormat.ALPHA_8: 8,
-    datatypes.EPixelFormat.GLOW_8: 8,
-    datatypes.EPixelFormat.RGBA_8888: 32,
-    datatypes.EPixelFormat.RGBA_8888_REV: 32,
-    datatypes.EPixelFormat.RGBA_5551: 16,
-    datatypes.EPixelFormat.RGBA_5551_REV: 16,
-    datatypes.EPixelFormat.RGBA_4444: 16,
-    datatypes.EPixelFormat.RGBA_4444_REV: 16,
-    datatypes.EPixelFormat.RGB_888_32: 32,
-    datatypes.EPixelFormat.RGB_888_32_REV: 32,
-    datatypes.EPixelFormat.RGB_888: 24,
-    datatypes.EPixelFormat.RGB_888_REV: 24,
-    datatypes.EPixelFormat.RGB_565: 16,
-    datatypes.EPixelFormat.RGB_565_REV: 16,
-    datatypes.EPixelFormat.RGB_555: 16,
-    datatypes.EPixelFormat.RGB_555_REV: 16,
-    datatypes.EPixelFormat.S3TC1: 4,
-    datatypes.EPixelFormat.S3TC3: 8,
-    datatypes.EPixelFormat.S3TC5: 8,
-    datatypes.EPixelFormat.RGBE_REV: 32,
-    datatypes.EPixelFormat.INDEX_2X2: 4,
-    datatypes.EPixelFormat.INDEX_2: 2,
-    datatypes.EPixelFormat.FLOAT_32: 32,
-    datatypes.EPixelFormat.RGB_FLOAT_32: 96,
-    datatypes.EPixelFormat.RGBA_FLOAT_32: 128,
-    datatypes.EPixelFormat.FLOAT_16: 16,
-    datatypes.EPixelFormat.RG_FLOAT_16: 32,
-    datatypes.EPixelFormat.RGB_FLOAT_16: 48,
-    datatypes.EPixelFormat.RGBA_FLOAT_16: 64,
-    datatypes.EPixelFormat.DEPTH_24_STENCIL_8: 32,
-    datatypes.EPixelFormat.DEPTH_16_STENCIL_0: 16,
+RGBA_MASKS_KZ2 = {
+    datatypes.EPixelFormat_KZ2.ALPHA_4: (0, 0, 0, 0xf),
+    datatypes.EPixelFormat_KZ2.ALPHA_8: (0, 0, 0, 0xff),
+    datatypes.EPixelFormat_KZ2.RGBA_8888: (0xff000000, 0xff0000, 0xff00, 0xff),
+    datatypes.EPixelFormat_KZ2.RGBA_8888_REV: (0xff00, 0xff0000, 0xff000000, 0xff),
+    datatypes.EPixelFormat_KZ2.RGBA_5551: (0b1111100000000000, 0b11111000000, 0b111110, 0b1),
+    datatypes.EPixelFormat_KZ2.RGBA_5551_REV: (0b111110, 0b11111000000, 0b1111100000000000, 0b1),
+    datatypes.EPixelFormat_KZ2.RGBA_4444: (0xf000, 0xf00, 0xf0, 0xf),
+    datatypes.EPixelFormat_KZ2.RGBA_4444_REV: (0xf0, 0xf00, 0xf000, 0xf),
+    datatypes.EPixelFormat_KZ2.RGB_888_32: (0xff000000, 0xff0000, 0xff00, 0),
+    datatypes.EPixelFormat_KZ2.RGB_888_32_REV: (0xff00, 0xff0000, 0xff000000, 0),
+    datatypes.EPixelFormat_KZ2.RGB_888: (0xff0000, 0xff00, 0xff, 0),
+    datatypes.EPixelFormat_KZ2.RGB_888_REV: (0xff, 0xff00, 0xff0000, 0),
+    datatypes.EPixelFormat_KZ2.RGB_565: (0xf800, 0x7e0, 0x1f, 0),
+    datatypes.EPixelFormat_KZ2.RGB_565_REV: (0x1f, 0x7e0, 0xf800, 0),
+    datatypes.EPixelFormat_KZ2.RGB_555: (0x7c00, 0xe30, 0x1f, 0),
+    datatypes.EPixelFormat_KZ2.RGB_555_REV: (0x1f, 0xe30, 0x7c00, 0),
+    datatypes.EPixelFormat_KZ2.RGBE_REV: (0xff000000, 0xff0000, 0xff00, 0),
+    datatypes.EPixelFormat_KZ2.DEPTH_24_STENCIL_8: (0xffffff, 0, 0, 0xff000000),
+    datatypes.EPixelFormat_KZ2.DEPTH_16_STENCIL_0: (0xffff, 0, 0, 0),
 }
 
-RGBA_MASKS = {
-    datatypes.EPixelFormat.ALPHA_4: (0, 0, 0, 0xf),
-    datatypes.EPixelFormat.ALPHA_8: (0, 0, 0, 0xff),
-    datatypes.EPixelFormat.RGBA_8888: (0xff000000, 0xff0000, 0xff00, 0xff),
-    datatypes.EPixelFormat.RGBA_8888_REV: (0xff00, 0xff0000, 0xff000000, 0xff),
-    datatypes.EPixelFormat.RGBA_5551: (0b1111100000000000, 0b11111000000, 0b111110, 0b1),
-    datatypes.EPixelFormat.RGBA_5551_REV: (0b111110, 0b11111000000, 0b1111100000000000, 0b1),
-    datatypes.EPixelFormat.RGBA_4444: (0xf000, 0xf00, 0xf0, 0xf),
-    datatypes.EPixelFormat.RGBA_4444_REV: (0xf0, 0xf00, 0xf000, 0xf),
-    datatypes.EPixelFormat.RGB_888_32: (0xff000000, 0xff0000, 0xff00, 0),
-    datatypes.EPixelFormat.RGB_888_32_REV: (0xff00, 0xff0000, 0xff000000, 0),
-    datatypes.EPixelFormat.RGB_888: (0xff0000, 0xff00, 0xff, 0),
-    datatypes.EPixelFormat.RGB_888_REV: (0xff, 0xff00, 0xff0000, 0),
-    datatypes.EPixelFormat.RGB_565: (0xf800, 0x7e0, 0x1f, 0),
-    datatypes.EPixelFormat.RGB_565_REV: (0x1f, 0x7e0, 0xf800, 0),
-    datatypes.EPixelFormat.RGB_555: (0x7c00, 0xe30, 0x1f, 0),
-    datatypes.EPixelFormat.RGB_555_REV: (0x1f, 0xe30, 0x7c00, 0),
-    datatypes.EPixelFormat.RGBE_REV: (0xff000000, 0xff0000, 0xff00, 0),
-    datatypes.EPixelFormat.DEPTH_24_STENCIL_8: (0xffffff, 0, 0, 0xff000000),
-    datatypes.EPixelFormat.DEPTH_16_STENCIL_0: (0xffff, 0, 0, 0),
+RGBA_MASKS_KZ3 = {
+    datatypes.EPixelFormat_KZ3.ALPHA_4: (0, 0, 0, 0xf),
+    datatypes.EPixelFormat_KZ3.ALPHA_8: (0, 0, 0, 0xff),
+    datatypes.EPixelFormat_KZ3.INTENSITY_8: (0xff, 0, 0, 0),
+    datatypes.EPixelFormat_KZ3.RGBA_8888: (0xff000000, 0xff0000, 0xff00, 0xff),
+    datatypes.EPixelFormat_KZ3.RGBA_8888_REV: (0xff00, 0xff0000, 0xff000000, 0xff),
+    datatypes.EPixelFormat_KZ3.RGBA_5551: (0b1111100000000000, 0b11111000000, 0b111110, 0b1),
+    datatypes.EPixelFormat_KZ3.RGBA_5551_REV: (0b111110, 0b11111000000, 0b1111100000000000, 0b1),
+    datatypes.EPixelFormat_KZ3.RGBA_4444: (0xf000, 0xf00, 0xf0, 0xf),
+    datatypes.EPixelFormat_KZ3.RGBA_4444_REV: (0xf0, 0xf00, 0xf000, 0xf),
+    datatypes.EPixelFormat_KZ3.RGB_888_32: (0xff000000, 0xff0000, 0xff00, 0),
+    datatypes.EPixelFormat_KZ3.RGB_888_32_REV: (0xff00, 0xff0000, 0xff000000, 0),
+    datatypes.EPixelFormat_KZ3.RGB_888: (0xff0000, 0xff00, 0xff, 0),
+    datatypes.EPixelFormat_KZ3.RGB_888_REV: (0xff, 0xff00, 0xff0000, 0),
+    datatypes.EPixelFormat_KZ3.RGB_565: (0xf800, 0x7e0, 0x1f, 0),
+    datatypes.EPixelFormat_KZ3.RGB_565_REV: (0x1f, 0x7e0, 0xf800, 0),
+    datatypes.EPixelFormat_KZ3.RGB_555: (0x7c00, 0xe30, 0x1f, 0),
+    datatypes.EPixelFormat_KZ3.RGB_555_REV: (0x1f, 0xe30, 0x7c00, 0),
+    datatypes.EPixelFormat_KZ3.RGBE_REV: (0xff000000, 0xff0000, 0xff00, 0),
+    datatypes.EPixelFormat_KZ3.DEPTH_24_STENCIL_8: (0xffffff, 0, 0, 0xff000000),
+    datatypes.EPixelFormat_KZ3.DEPTH_16_STENCIL_0: (0xffff, 0, 0, 0),
 }
 
-def make_dds(tex: datatypes.Texture, filepath: str):
+def make_dds(tex: datatypes.Texture, filepath: str, version: int):
+    if version == 173:
+        EPixelFormat = datatypes.EPixelFormat_KZ3
+        BITS_PER_PIXELS = datatypes.BITS_PER_PIXELS_KZ3
+        RGBA_MASKS = RGBA_MASKS_KZ3
+    else:
+        EPixelFormat = datatypes.EPixelFormat_KZ2
+        BITS_PER_PIXELS = datatypes.BITS_PER_PIXELS_KZ2
+        RGBA_MASKS = RGBA_MASKS_KZ2
+
     with open(filepath, "wb") as file:
         file.write(b"DDS ")
 
-        is_compressed = tex.format.pixel_format in {datatypes.EPixelFormat.S3TC1, datatypes.EPixelFormat.S3TC3, datatypes.EPixelFormat.S3TC5}
+        is_compressed = tex.format.pixel_format in {EPixelFormat.S3TC1, EPixelFormat.S3TC3, EPixelFormat.S3TC5}
         is_dx10 = tex.format.pixel_format > 24
         data = tex.data
 
@@ -105,18 +100,18 @@ def make_dds(tex: datatypes.Texture, filepath: str):
         if is_compressed:
             flags = 0x4
             match tex.format.pixel_format:
-                case datatypes.EPixelFormat.S3TC1:
+                case EPixelFormat.S3TC1:
                     four_cc = 827611204
-                case datatypes.EPixelFormat.S3TC3:
+                case EPixelFormat.S3TC3:
                     four_cc = 861165636
-                case datatypes.EPixelFormat.S3TC5:
+                case EPixelFormat.S3TC5:
                     four_cc = 894720068
         elif is_dx10:
             flags = 0x4
             four_cc = 808540228
         else:
             flags = 0x40
-            if datatypes.EPixelFormat.RGBA_8888 <= tex.format.pixel_format <= datatypes.EPixelFormat.RGBA_4444_REV:
+            if EPixelFormat.RGBA_8888 <= tex.format.pixel_format <= EPixelFormat.RGBA_4444_REV:
                 flags |= 0x1
 
             bit_count = BITS_PER_PIXELS[tex.format.pixel_format]
@@ -130,19 +125,19 @@ def make_dds(tex: datatypes.Texture, filepath: str):
 
         if is_dx10:
             match tex.format.pixel_format:
-                case datatypes.EPixelFormat.FLOAT_32:
+                case EPixelFormat.FLOAT_32:
                     fmt = 41
-                case datatypes.EPixelFormat.RGB_FLOAT_32:
+                case EPixelFormat.RGB_FLOAT_32:
                     fmt = 6
-                case datatypes.EPixelFormat.RGBA_FLOAT_32:
+                case EPixelFormat.RGBA_FLOAT_32:
                     fmt = 2
-                case datatypes.EPixelFormat.FLOAT_16:
+                case EPixelFormat.FLOAT_16:
                     fmt = 54
-                case datatypes.EPixelFormat.RG_FLOAT_16:
+                case EPixelFormat.RG_FLOAT_16:
                     fmt = 34
-                case datatypes.EPixelFormat.RGB_FLOAT_16:
+                case EPixelFormat.RGB_FLOAT_16:
                     fmt = 10 # ?
-                case datatypes.EPixelFormat.RGBA_FLOAT_16:
+                case EPixelFormat.RGBA_FLOAT_16:
                     fmt = 10
 
             file.write(pack("5I", fmt, 3, 0, 1, 0x01))

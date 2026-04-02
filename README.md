@@ -1,12 +1,12 @@
-# Killzone 2 *.core import plugin for Blender
+# Killzone 2 and 3 *.core import plugin for Blender
 
-Blender plugin to import Killzone 2 *.core files  
+Blender plugin to import Killzone 2 and 3 *.core files  
 Tested on Blender 5.0
 
 ## Supported assets
 - Meshes - imports to Blender mesh objects
 - Skeletons - imports to Blender armature objects
-- Textures - imports to Blender images (available in scene, not extracted to disk)
+- Textures - imports to Blender images (optionally saved on disk)
 
 Animations are not supported since they are in Sony's proprietary EDGE format.
 

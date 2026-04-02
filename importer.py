@@ -1,9 +1,12 @@
 import bpy
+import _bpy_types
 import tempfile
 import os
 from mathutils import Vector, Quaternion, Matrix
 from . import datatypes, decoders, dds
 from .core import read_core
+
+VERSION = 0
 
 def prepare_vertex_array(va: datatypes.VertexArrayResource):
     if hasattr(va, "_is_prepared"):
@@ -56,7 +59,7 @@ def create_static_mesh_resource(context, sm: datatypes.StaticMeshResource, paren
         if isinstance(verts[0][0], tuple):
             verts = list(map(lambda e: e[0], verts))
 
-        name = rp.name or "RenderingPrimitiveResource"
+        name = "RenderingPrimitiveResource"
 
         mesh = bpy.data.meshes.new(name)
         mesh.from_pydata(verts, [], polygons)
@@ -97,6 +100,10 @@ def create_static_mesh_resource(context, sm: datatypes.StaticMeshResource, paren
     return None
 
 def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedMeshResource, parent, name_override: str=""):
+    arm = None
+    if rsm.skeleton:
+        arm = create_resource(context, rsm.skeleton, context.scene.collection)
+
     all_verts = []
     all_weight_maps = []
 
@@ -155,7 +162,7 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
                     if datatypes.EVertexElement.VtxElemUV0 <= ve.vertex_element <= datatypes.EVertexElement.VtxElemUV6:
                         uvs.append(sf.values[ve][rp.index_offset:rp.index_offset+max_vtx+1])
 
-        name = rp.name or "RenderingPrimitiveResource"
+        name = "RenderingPrimitiveResource"
 
         mesh = bpy.data.meshes.new(name)
         mesh.from_pydata(verts, [], polygons)
@@ -177,7 +184,7 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
 
         weight_maps = all_weight_maps[i]
 
-        bone_names = (rsm.skinned_mesh_bone_bindings and rsm.skinned_mesh_bone_bindings.bone_names) or (rsm.skeleton and rsm.skeleton.bone_names)
+        bone_names = (rsm.skinned_mesh_bone_bindings and rsm.skinned_mesh_bone_bindings.bone_names) or (rsm.skeleton and (rsm.skeleton.bone_sets or [j.name for j in rsm.skeleton.joints]))
 
         if bone_names:
             for bone_index, weights in weight_maps.items():
@@ -187,10 +194,6 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
                     vg.add([vtx], weight, "ADD")
 
         primitives.append(obj)
-
-    arm = None
-    if rsm.skeleton:
-        arm = create_resource(context, rsm.skeleton, context.scene.collection)
 
     if primitives:
         main_object = primitives[0]
@@ -215,6 +218,16 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
     return None
 
 def create_lod_mesh_resource(context, lmr: datatypes.LodMeshResource, parent, name_override: str=""):
+    valid_parts = len([p for p in lmr.meshes if p.mesh and p.mesh not in CREATED_OBJECTS])
+    if valid_parts == 0:
+        return None
+    elif valid_parts == 1:
+        for part in lmr.meshes:
+            if not part.mesh:
+                continue
+
+            return create_resource(context, part.mesh, parent, name_override or lmr.name or "LodMeshResource")
+
     col = bpy.data.collections.new(name_override or lmr.name or "LodMeshResource")
     parent.children.link(col)
 
@@ -227,6 +240,16 @@ def create_lod_mesh_resource(context, lmr: datatypes.LodMeshResource, parent, na
     return col
 
 def create_multi_mesh_resource(context, mmr: datatypes.MultiMeshResource, parent, name_override: str=""):
+    valid_parts = len([p for p in mmr.parts if p.mesh and p.mesh not in CREATED_OBJECTS])
+    if valid_parts == 0:
+        return None
+    elif valid_parts == 1:
+        for part in mmr.parts:
+            if not part.mesh:
+                continue
+
+            return create_resource(context, part.mesh, parent, name_override or mmr.name or "MultiMeshResource")
+
     col = bpy.data.collections.new(name_override or mmr.name or "MultiMeshResource")
     parent.children.link(col)
 
@@ -239,6 +262,16 @@ def create_multi_mesh_resource(context, mmr: datatypes.MultiMeshResource, parent
     return col
 
 def create_switch_mesh_resource(context, smr: datatypes.SwitchMeshResource, parent, name_override: str=""):
+    valid_parts = len([p for p in smr.parts if p.mesh and p.mesh not in CREATED_OBJECTS])
+    if valid_parts == 0:
+        return None
+    elif smr.parts_use_the_same_mesh or valid_parts == 1:
+        for p in smr.parts:
+            if not p.mesh:
+                continue
+
+            return create_resource(context, p.mesh, parent, name_override or smr.name or p.key)
+    
     col = bpy.data.collections.new(name_override or smr.name or "SwitchMeshResource")
     parent.children.link(col)
 
@@ -250,7 +283,7 @@ def create_switch_mesh_resource(context, smr: datatypes.SwitchMeshResource, pare
 
     return col
 
-def create_skeleton(context, s: datatypes.Skeleton, parent, name_override: str = "", *, bindings: datatypes.SkinnedMeshBoneBindings=None):
+def create_skeleton(context, s: datatypes.Skeleton, parent, name_override: str = ""):
     name = name_override or s.name or "Skeleton"
 
     arm = bpy.data.armatures.new(name)
@@ -262,54 +295,60 @@ def create_skeleton(context, s: datatypes.Skeleton, parent, name_override: str =
 
     arm.display_type = "STICK"
 
-    bind_matrices = None
-    if bindings:
-        bind_matrices = {name: bindings.inverse_bind_matrices[i] for i, name in enumerate(bindings.bone_names)}
-
-    for b in s.bones:
-        bone = arm.edit_bones.new(b.name)
+    for j in s.joints:
+        bone = arm.edit_bones.new(j.name)
         bone.head = (0, 0, 0)
         bone.tail = (0, 0.001, 0)
 
-        if bind_matrices:
-            mat = Matrix(bind_matrices[b.name]).inverted()
-            mat[0][3], mat[3][0] = mat[3][0], mat[0][3]
-            mat[1][3], mat[3][1] = mat[3][1], mat[1][3]
-            mat[2][3], mat[3][2] = mat[3][2], mat[2][3]
-        else:
-            pos = Vector(b.position)
-            rot = Quaternion((b.rotation[3], b.rotation[0], b.rotation[1], b.rotation[2]))
-            mat = rot.to_matrix().to_4x4()
-            mat.translation = pos
+        pos = Vector(j.translation)
+        rot = Quaternion((j.rotation[3], j.rotation[0], j.rotation[1], j.rotation[2]))
+        mat = rot.to_matrix().to_4x4()
+        mat.translation = pos
 
-            if b.parent_name:
-                mat = arm.edit_bones[b.parent_name].matrix @ mat
+        parent = (j.parent_index > -1 and arm.edit_bones[j.parent_index]) or (j.parent_name and arm.edit_bones[j.parent_name]) or None
+
+        if parent:
+            mat = parent.matrix @ mat
 
         bone.matrix = mat
-
-        if b.parent_name:
-            bone.parent = arm.edit_bones[b.parent_name]
+        bone.parent = parent
 
     bpy.ops.object.mode_set(mode="OBJECT")
     context.view_layer.objects.active = None
 
     return obj
 
-def create_texture(context, tex: datatypes.Texture):
-    path = os.path.join(tempfile.gettempdir(), tex.id + ".dds")
-    dds.make_dds(tex, path)
+def create_texture(context, tex: datatypes.Texture, textures_dir: str=""):
+    if tex.format.height == 1:
+        return None
+    
+    if textures_dir:
+        path = os.path.join(textures_dir, tex.id + ".dds")
+    else:
+        path = os.path.join(tempfile.gettempdir(), tex.id + ".dds")
+
+    dds.make_dds(tex, path, VERSION)
 
     img = bpy.data.images.load(filepath=path)
-    img.pack()
 
-    os.remove(path)
+    if not textures_dir:
+        img.pack()
+        os.remove(path)
 
     return img
 
 CREATED_OBJECTS = dict()
-def create_resource(context, obj, parent, name_override: str = ""):
+def create_resource(context, obj, parent, name_override: str = "", **kwargs):
     result = CREATED_OBJECTS.get(obj)
     if result:
+        if parent is not context.scene.collection:
+            if isinstance(result, _bpy_types.Collection):
+                if result.name not in parent.children:
+                    parent.children.link(result)
+            elif isinstance(result, _bpy_types.Object):
+                if result.name not in parent.objects:
+                    parent.objects.link(result)
+
         return result
     
     match type(obj):
@@ -326,7 +365,7 @@ def create_resource(context, obj, parent, name_override: str = ""):
         case datatypes.Skeleton:
             result = create_skeleton(context, obj, parent, name_override)
         case datatypes.Texture:
-            result = create_texture(context, obj)
+            result = create_texture(context, obj, **kwargs)
         case _:
             return
         
@@ -335,8 +374,8 @@ def create_resource(context, obj, parent, name_override: str = ""):
     return result
 
 PRIORITIES = {
-    datatypes.SwitchMeshResource: 0,
-    datatypes.MultiMeshResource: 1,
+    datatypes.MultiMeshResource: 0,
+    datatypes.SwitchMeshResource: 1,
     datatypes.LodMeshResource: 2,
     datatypes.RegularSkinnedMeshResource: 3,
     datatypes.StaticMeshResource: 3,
@@ -344,17 +383,30 @@ PRIORITIES = {
     datatypes.Texture: 10,
 }
 
-def load_core(context, filepath: str):
+def load_core(context, filepath: str, save_textures: bool):
     CREATED_OBJECTS.clear()
+
+    textures_dir = ""
+    if save_textures:
+        basename = os.path.splitext(os.path.basename(filepath))[0]
+        textures_dir = os.path.join(os.path.dirname(filepath), f"{basename}_textures")
+        os.makedirs(textures_dir)
 
     ctx = read_core(filepath)
 
-    for obj in sorted(ctx.objects, key=lambda e: PRIORITIES.get(e.__class__, 10)):
-        if obj.__class__ not in PRIORITIES:
-            continue
+    global VERSION
+    VERSION = ctx.version
 
-        obj.parse(ctx)
+    try:
+        for obj in sorted(ctx.objects, key=lambda e: PRIORITIES.get(e.__class__, 10)):
+            if obj.__class__ not in PRIORITIES:
+                continue
 
-        create_resource(context, obj, context.scene.collection)
+            obj.parse(ctx)
+
+            create_resource(context, obj, context.scene.collection, textures_dir=textures_dir)
+    finally:
+        if ctx.stream_file:
+            ctx.stream_file.close()
 
     return {"FINISHED"}

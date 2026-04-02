@@ -15,6 +15,10 @@ class Reader:
     def skip(self, count: int):
         self.f.seek(count, SEEK_CUR)
 
+    def skip_array(self, item_size: int):
+        count = self.read_var_int()
+        self.skip(count*item_size)
+
     def align(self, offset: int = 0, alignment: int = 4):
         padding = (alignment - ((self.f.tell() + offset) % alignment)) % alignment
         self.skip(padding)
@@ -35,19 +39,14 @@ class Reader:
             case 128:
                 return self.unpack(">I")[0]
         return value
-    
-    def read_var_int2(self) -> int:
-        value = self.read(1)[0]
-        match value:
-            case 254:
-                return self.unpack(">H")[0]
-            case 255:
-                return self.unpack(">I")[0]
-        return value
             
     def read_string(self, char_size: int=1, encoding: str="utf-8") -> str:
         length = self.read_var_int()
         return self.read(length*char_size).decode(encoding)
+    
+    def skip_string(self, char_size: int=1):
+        length = self.read_var_int()
+        self.skip(length*char_size)
     
     def read_typed_string(self, type_name: str) -> str:
         self.read_var_int()
@@ -58,7 +57,12 @@ class Reader:
             char_size = 2
             encoding = "utf-16_be"
 
-        length = self.read_var_int2()
+        length = self.read(1)[0]
+        match length:
+            case 254:
+                length = self.unpack(">H")[0]
+            case 255:
+                length = self.unpack(">I")[0]
 
         return self.read(length*char_size).decode(encoding)
     
@@ -66,7 +70,7 @@ class Reader:
         match count:
             case int() if count > 0x10000:
                 return self.unpack(">I")[0]
-            case int() if count > 255:
+            case int() if count > 0x100:
                 return self.unpack(">H")[0]
         return self.unpack(">B")[0]
             
