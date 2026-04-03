@@ -35,8 +35,14 @@ class ImportKillzone2Core(Operator, ImportHelper):
         default=False,
     )
 
+    apply_bindings: BoolProperty(
+        name="Apply skeleton bindings",
+        description="Apply bone bindings to mesh to fix misaligned rest pose",
+        default=True,
+    )
+
     def execute(self, context):
-        return load_core(context, self.filepath, self.save_textures)
+        return load_core(context, self.filepath, self.save_textures, self.apply_bindings)
 
 
 def menu_func_import(self, context):

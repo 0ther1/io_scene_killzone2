@@ -30,7 +30,7 @@ def prepare_index_array(ia: datatypes.IndexArrayResource):
     ia.indices = [decoders.decode_triangle(ia.data, 6*i) for i in range(ia.count//3)]
     ia.data = None
 
-def apply_bindings(context, obj, arm_obj, bindings: datatypes.SkinnedMeshBoneBindings):
+def apply_bindings_to_mesh(context, obj, arm_obj, bindings: datatypes.SkinnedMeshBoneBindings):
     context.view_layer.objects.active = arm_obj
     bpy.ops.object.mode_set(mode='OBJECT')
     bpy.ops.object.select_all(action='DESELECT')
@@ -68,7 +68,23 @@ def apply_bindings(context, obj, arm_obj, bindings: datatypes.SkinnedMeshBoneBin
 
     bpy.data.objects.remove(copy_arm, do_unlink=True)
 
-def create_static_mesh_resource(context, sm: datatypes.StaticMeshResource, parent, name_override: str=""):
+def apply_render_effect(mat, fx: datatypes.RenderEffectResource):
+    nodes = mat.node_tree.nodes
+    bsdf = nodes["Principled BSDF"]
+    links = mat.node_tree.links
+        
+    for rt in fx.render_techniques:
+        for tb in rt.texture_bindings:
+            if not isinstance(tb.texture, datatypes.Texture):
+                continue
+
+            if tb.sampler == "inSampler0":
+                tex_image = nodes.new(type="ShaderNodeTexImage")
+                tex_image.image = CREATED_OBJECTS[tb.texture]
+
+                mat.node_tree.links.new(tex_image.outputs["Color"], bsdf.inputs["Base Color"])
+
+def create_static_mesh_resource(context, sm: datatypes.StaticMeshResource, parent, name_override: str="", **kwargs):
     primitives = []
 
     for rp in sm.primitives:
@@ -106,6 +122,9 @@ def create_static_mesh_resource(context, sm: datatypes.StaticMeshResource, paren
         mat = bpy.data.materials.new(name="Material")
         mesh.materials.append(mat)
 
+        if isinstance(rp.render_effects, datatypes.RenderEffectResource):
+            apply_render_effect(mat, rp.render_effects)
+
         for i, uv_verts in enumerate(uvs):
             uvl = mesh.uv_layers.new(name=f"UV Map {i}")
             for l in mesh.loops:
@@ -137,14 +156,14 @@ def create_static_mesh_resource(context, sm: datatypes.StaticMeshResource, paren
 
     return None
 
-def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedMeshResource, parent, name_override: str=""):
+def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedMeshResource, parent, name_override: str="", *, apply_bindings: bool=False, **kwargs):
     arm = None
     bindings = None
     binding_required = False
 
     if rsm.skeleton:
         bindings = (isinstance(rsm.skinned_mesh_bone_bindings, datatypes.SkinnedMeshBoneBindings) and rsm.skinned_mesh_bone_bindings) or None
-        binding_required = bindings != None
+        binding_required = apply_bindings and bindings != None
         if isinstance(rsm.skeleton, datatypes.Skeleton):
             binding_required = binding_required and rsm.skeleton in CREATED_OBJECTS
             arm = create_resource(context, rsm.skeleton, context.scene.collection, bindings=bindings)
@@ -221,6 +240,9 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
         mat = bpy.data.materials.new(name="Material")
         mesh.materials.append(mat)
 
+        if isinstance(rp.render_effects, datatypes.RenderEffectResource):
+            apply_render_effect(mat, rp.render_effects)
+
         for j, uv_verts in enumerate(uvs):
             uvl = mesh.uv_layers.new(name=f"UV Map {j}")
             for l in mesh.loops:
@@ -261,61 +283,67 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
 
         if arm:
             if binding_required:
-                apply_bindings(context, main_object, arm, bindings)
+                apply_bindings_to_mesh(context, main_object, arm, bindings)
 
             mod = main_object.modifiers.new(name="Armature", type="ARMATURE")
             mod.object = arm
 
+        for i, fx in enumerate(rsm.render_effects):
+            if not isinstance(fx, datatypes.RenderEffectResource):
+                continue
+
+            mat = main_object.data.materials[i]
+            apply_render_effect(mat, fx)
 
         return main_object
     
     return None
 
-def create_lod_mesh_resource(context, lmr: datatypes.LodMeshResource, parent, name_override: str=""):
-    valid_parts = [p for p in lmr.meshes if isinstance(p.mesh, datatypes.LodMeshResourcePart) and p.mesh not in CREATED_OBJECTS]
+def create_lod_mesh_resource(context, lmr: datatypes.LodMeshResource, parent, name_override: str="", **kwargs):
+    valid_parts = [p for p in lmr.meshes if isinstance(p.mesh, datatypes.MeshResourceBase) and p.mesh not in CREATED_OBJECTS]
 
     if not valid_parts:
         return None
     elif len(valid_parts) == 1:
-        return create_resource(context, valid_parts[0].mesh, parent, name_override or lmr.name or "LodMeshResource")
+        return create_resource(context, valid_parts[0].mesh, parent, name_override or lmr.name or "LodMeshResource", **kwargs)
 
     col = bpy.data.collections.new(name_override or lmr.name or "LodMeshResource")
     parent.children.link(col)
 
     for i, part in enumerate(valid_parts):
-        create_resource(context, part.mesh, col, f"LOD {i}")
+        create_resource(context, part.mesh, col, f"LOD {i}", **kwargs)
 
     return col
 
-def create_multi_mesh_resource(context, mmr: datatypes.MultiMeshResource, parent, name_override: str=""):
-    valid_parts = [p for p in mmr.parts if isinstance(p.mesh, datatypes.MultiMeshResourcePart) and p.mesh not in CREATED_OBJECTS]
+def create_multi_mesh_resource(context, mmr: datatypes.MultiMeshResource, parent, name_override: str="", **kwargs):
+    valid_parts = [p for p in mmr.parts if isinstance(p.mesh, datatypes.MeshResourceBase) and p.mesh not in CREATED_OBJECTS]
 
     if not valid_parts:
         return None
     elif len(valid_parts) == 1:
-        return create_resource(context, valid_parts[0].mesh, parent, name_override or mmr.name or "MultiMeshResource")
+        return create_resource(context, valid_parts[0].mesh, parent, name_override or mmr.name or "MultiMeshResource", **kwargs)
 
     col = bpy.data.collections.new(name_override or mmr.name or "MultiMeshResource")
     parent.children.link(col)
 
     for i, part in enumerate(valid_parts):
-        create_resource(context, part.mesh, col, f"Part {i}")
+        create_resource(context, part.mesh, col, f"Part {i}", **kwargs)
 
     return col
 
-def create_switch_mesh_resource(context, smr: datatypes.SwitchMeshResource, parent, name_override: str=""):
-    valid_parts = [p for p in smr.parts if isinstance(p.mesh, datatypes.SwitchMeshResourcePart) and p.mesh not in CREATED_OBJECTS]
+def create_switch_mesh_resource(context, smr: datatypes.SwitchMeshResource, parent, name_override: str="", **kwargs):
+    valid_parts = [p for p in smr.parts if isinstance(p.mesh, datatypes.MeshResourceBase) and p.mesh not in CREATED_OBJECTS]
 
     if not valid_parts:
         return None
     elif smr.parts_use_the_same_mesh or len(valid_parts) == 1:
-        return create_resource(context, valid_parts[0].mesh, parent, name_override or smr.name or p.key)
+        return create_resource(context, valid_parts[0].mesh, parent, name_override or smr.name or p.key, **kwargs)
     
     col = bpy.data.collections.new(name_override or smr.name or "SwitchMeshResource")
     parent.children.link(col)
 
     for p in valid_parts:
-        create_resource(context, p.mesh, col, p.key)
+        create_resource(context, p.mesh, col, p.key, **kwargs)
 
     return col
 
@@ -384,6 +412,7 @@ def create_texture(context, tex: datatypes.Texture, *, textures_dir: str="", **k
 CREATED_OBJECTS = dict()
 def create_resource(context, obj, parent, name_override: str = "", **kwargs):
     result = CREATED_OBJECTS.get(obj)
+
     if result:
         if parent is not context.scene.collection:
             if isinstance(result, _bpy_types.Collection):
@@ -397,15 +426,15 @@ def create_resource(context, obj, parent, name_override: str = "", **kwargs):
     
     match type(obj):
         case datatypes.SwitchMeshResource:
-            result = create_switch_mesh_resource(context, obj, parent, name_override)
+            result = create_switch_mesh_resource(context, obj, parent, name_override, **kwargs)
         case datatypes.MultiMeshResource:
-            result = create_multi_mesh_resource(context, obj, parent, name_override)
+            result = create_multi_mesh_resource(context, obj, parent, name_override, **kwargs)
         case datatypes.LodMeshResource:
-            result = create_lod_mesh_resource(context, obj, parent, name_override)
+            result = create_lod_mesh_resource(context, obj, parent, name_override, **kwargs)
         case datatypes.StaticMeshResource:
-            result = create_static_mesh_resource(context, obj, parent, name_override)
+            result = create_static_mesh_resource(context, obj, parent, name_override, **kwargs)
         case datatypes.RegularSkinnedMeshResource:
-            result = create_regular_skinned_mesh_resource(context, obj, parent, name_override)
+            result = create_regular_skinned_mesh_resource(context, obj, parent, name_override, **kwargs)
         case datatypes.Skeleton:
             result = create_skeleton(context, obj, parent, name_override, **kwargs)
         case datatypes.Texture:
@@ -418,16 +447,16 @@ def create_resource(context, obj, parent, name_override: str = "", **kwargs):
     return result
 
 PRIORITIES = {
-    datatypes.MultiMeshResource: 0,
-    datatypes.SwitchMeshResource: 1,
-    datatypes.LodMeshResource: 2,
-    datatypes.RegularSkinnedMeshResource: 3,
-    datatypes.StaticMeshResource: 3,
-    datatypes.Skeleton: 4,
-    datatypes.Texture: 10,
+    datatypes.Texture: 0,
+    datatypes.MultiMeshResource: 1,
+    datatypes.SwitchMeshResource: 2,
+    datatypes.LodMeshResource: 3,
+    datatypes.RegularSkinnedMeshResource: 4,
+    datatypes.StaticMeshResource: 5,
+    datatypes.Skeleton: 6,
 }
 
-def load_core(context, filepath: str, save_textures: bool):
+def load_core(context, filepath: str, save_textures: bool, apply_bindings: bool):
     CREATED_OBJECTS.clear()
 
     textures_dir = ""
@@ -441,14 +470,13 @@ def load_core(context, filepath: str, save_textures: bool):
     global VERSION
     VERSION = ctx.version
 
-    try:
-        for obj in sorted(ctx.objects, key=lambda e: PRIORITIES.get(e.__class__, 10)):
-            if obj.__class__ not in PRIORITIES:
-                continue
+    objects = sorted([obj for obj in ctx.objects if obj.__class__ in PRIORITIES], key=lambda e: PRIORITIES[e.__class__])
 
+    try:
+        for obj in objects:
             obj.parse(ctx)
 
-            create_resource(context, obj, context.scene.collection, textures_dir=textures_dir)
+            create_resource(context, obj, context.scene.collection, textures_dir=textures_dir, apply_bindings=apply_bindings)
     finally:
         if ctx.stream_file:
             ctx.stream_file.close()

@@ -827,6 +827,45 @@ class MeshResourceBase(Resource):
         super()._parse(r, ctx)
         r.skip(29)
 
+class TextureBinding:
+    sampler: str
+
+    def __init__(self, r: Reader, ctx: Context):
+        self.sampler = ctx.read_string_index(r)
+        self.texture = ctx.read_object_ref(r)
+        r.skip(4)
+
+class RenderTechnique:
+    texture_bindings: list[TextureBinding]
+
+    def __init__(self, r: Reader, ctx: Context):
+        if ctx.version == 173:
+            r.skip(30)
+        else:
+            r.skip(27)
+        ctx.skip_object_ref(r)
+        self.texture_bindings = [TextureBinding(r, ctx) for _ in range(r.read_var_int())]
+
+        for _ in range(r.read_var_int()):
+            ctx.skip_string_index(r)
+            r.skip(20)
+            ctx.skip_object_ref(r)
+            ctx.skip_string_index(r)
+
+        r.skip(4)
+
+        if ctx.version == 173:
+            r.skip(4)
+
+class RenderEffectResource(Resource):
+    render_techniques: list[RenderTechnique]
+
+    def _parse(self, r: Reader, ctx: Context):
+        super()._parse(r, ctx)
+        if ctx.version >= 158:
+            ctx.skip_object_ref(r)
+        self.render_techniques = [RenderTechnique(r, ctx) for _ in range(r.read_var_int())]
+
 class PrimitiveResource(Resource):
     vertex_array: VertexArrayResource|str|None
     index_array: IndexArrayResource|str|None
@@ -843,9 +882,21 @@ class PrimitiveResource(Resource):
         self.index_array = ctx.read_object_ref(r, True)
         self.index_offset = r.unpack(">i")[0]
 
+        if ctx.version == 173:
+            r.skip(24)
+            ctx.skip_object_ref(r)
+            r.skip(8)
+        elif ctx.version == 158:
+            ctx.skip_object_ref(r)
+
 class RenderingPrimitiveResource(PrimitiveResource):
+    render_effects: RenderEffectResource|str|None
+
     def _parse(self, r: Reader, ctx: Context):
         super()._parse(r, ctx)
+        if ctx.version < 173:
+            r.skip(16)
+        self.render_effects = ctx.read_object_ref(r, True)
 
 class StaticMeshResource(MeshResourceBase):
     primitives: list[RenderingPrimitiveResource|str|None]
@@ -1085,7 +1136,7 @@ class RegularSkinnedMeshResource(SkinnedMeshResource):
             self.skin_info = ctx.read_object_ref(r, True)
 
         self.primitives = [ctx.read_object_ref(r, True) for _ in range(r.read_var_int())]
-        ctx.skip_object_ref(r, r.read_var_int())
+        self.render_effects = [ctx.read_object_ref(r, True) for _ in range(r.read_var_int())]
         self.position_bounds_scale = r.unpack(">3f")
         self.position_bounds_offset = r.unpack(">3f")
 
