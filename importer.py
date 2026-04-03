@@ -102,7 +102,7 @@ def create_static_mesh_resource(context, sm: datatypes.StaticMeshResource, paren
 def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedMeshResource, parent, name_override: str=""):
     arm = None
     if rsm.skeleton:
-        arm = create_resource(context, rsm.skeleton, context.scene.collection)
+        arm = create_resource(context, rsm.skeleton, context.scene.collection, bindings=rsm.skinned_mesh_bone_bindings)
 
     all_verts = []
     all_weight_maps = []
@@ -283,7 +283,7 @@ def create_switch_mesh_resource(context, smr: datatypes.SwitchMeshResource, pare
 
     return col
 
-def create_skeleton(context, s: datatypes.Skeleton, parent, name_override: str = ""):
+def create_skeleton(context, s: datatypes.Skeleton, parent, name_override: str = "", *, bindings: datatypes.SkinnedMeshBoneBindings=None):
     name = name_override or s.name or "Skeleton"
 
     arm = bpy.data.armatures.new(name)
@@ -295,20 +295,27 @@ def create_skeleton(context, s: datatypes.Skeleton, parent, name_override: str =
 
     arm.display_type = "STICK"
 
+    bind_matrices = None
+    if bindings:
+        bind_matrices = {name: bindings.inverse_bind_matrices[i] for i, name in enumerate(bindings.bone_names)}
+
     for j in s.joints:
         bone = arm.edit_bones.new(j.name)
         bone.head = (0, 0, 0)
         bone.tail = (0, 0.001, 0)
 
-        pos = Vector(j.translation)
-        rot = Quaternion((j.rotation[3], j.rotation[0], j.rotation[1], j.rotation[2]))
-        mat = rot.to_matrix().to_4x4()
-        mat.translation = pos
-
         parent = (j.parent_index > -1 and arm.edit_bones[j.parent_index]) or (j.parent_name and arm.edit_bones[j.parent_name]) or None
 
-        if parent:
-            mat = parent.matrix @ mat
+        if bind_matrices:
+            mat = Matrix(bind_matrices[j.name]).transposed().inverted()
+        else:
+            pos = Vector(j.translation)
+            rot = Quaternion((j.rotation[3], j.rotation[0], j.rotation[1], j.rotation[2]))
+            mat = rot.to_matrix().to_4x4()
+            mat.translation = pos
+
+            if parent:
+                mat = parent.matrix @ mat
 
         bone.matrix = mat
         bone.parent = parent
@@ -363,7 +370,7 @@ def create_resource(context, obj, parent, name_override: str = "", **kwargs):
         case datatypes.RegularSkinnedMeshResource:
             result = create_regular_skinned_mesh_resource(context, obj, parent, name_override)
         case datatypes.Skeleton:
-            result = create_skeleton(context, obj, parent, name_override)
+            result = create_skeleton(context, obj, parent, name_override, **kwargs)
         case datatypes.Texture:
             result = create_texture(context, obj, **kwargs)
         case _:

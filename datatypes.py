@@ -1058,6 +1058,7 @@ class SkinnedMeshBoneBindings(BaseObject):
         super()._parse(r, ctx)
         count = r.read_var_int()
         self.bone_names = [ctx.read_string_index(r) for _ in range(count)]
+        self.inverse_bind_matrices = [[r.unpack(">4f") for _ in range(4)] for _ in range(count)]
 
 class RegularSkinnedMeshResource(SkinnedMeshResource):
     skinned_mesh_bone_bindings: SkinnedMeshBoneBindings|None
