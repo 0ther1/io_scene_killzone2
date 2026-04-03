@@ -828,8 +828,8 @@ class MeshResourceBase(Resource):
         r.skip(29)
 
 class PrimitiveResource(Resource):
-    vertex_array: VertexArrayResource|None
-    index_array: IndexArrayResource|None
+    vertex_array: VertexArrayResource|str|None
+    index_array: IndexArrayResource|str|None
     index_offset: int
 
     def _parse(self, r: Reader, ctx: Context):
@@ -848,7 +848,7 @@ class RenderingPrimitiveResource(PrimitiveResource):
         super()._parse(r, ctx)
 
 class StaticMeshResource(MeshResourceBase):
-    primitives: list[RenderingPrimitiveResource|None]
+    primitives: list[RenderingPrimitiveResource|str|None]
 
     def _parse(self, r: Reader, ctx: Context):
         super()._parse(r, ctx)
@@ -1036,7 +1036,7 @@ class BlendTargetDeformation:
         self.deformations = [PrimitiveDeltaDeformation(r) for _ in range(r.read_var_int())]        
 
 class SkinnedMeshResource(MeshResourceBase):
-    skeleton: Skeleton|None
+    skeleton: Skeleton|str|None
 
     def _parse(self, r: Reader, ctx: Context):
         super()._parse(r, ctx)   
@@ -1061,9 +1061,9 @@ class SkinnedMeshBoneBindings(BaseObject):
         self.inverse_bind_matrices = [[r.unpack(">4f") for _ in range(4)] for _ in range(count)]
 
 class RegularSkinnedMeshResource(SkinnedMeshResource):
-    skinned_mesh_bone_bindings: SkinnedMeshBoneBindings|None
-    skin_info: RegularSkinnedMeshResourceSkinInfo|None
-    primitives: list[RenderingPrimitiveResource|None]
+    skinned_mesh_bone_bindings: SkinnedMeshBoneBindings|str|None
+    skin_info: RegularSkinnedMeshResourceSkinInfo|str|None
+    primitives: list[RenderingPrimitiveResource|str|None]
     position_bounds_scale: tuple[float]
     position_bounds_offset: tuple[float]
 
@@ -1090,7 +1090,7 @@ class RegularSkinnedMeshResource(SkinnedMeshResource):
         self.position_bounds_offset = r.unpack(">3f")
 
 class SwitchMeshResourcePart:
-    mesh: MeshResourceBase|None
+    mesh: MeshResourceBase|str|None
     key: str
 
     def __init__(self, r: Reader, ctx: Context):
@@ -1111,7 +1111,7 @@ class SwitchMeshResource(MeshResourceBase):
         self.parts = [SwitchMeshResourcePart(r, ctx) for _ in range(r.read_var_int())]
 
 class LodMeshResourcePart:
-    mesh: MeshResourceBase|None
+    mesh: MeshResourceBase|str|None
 
     def __init__(self, r: Reader, ctx: Context):
         self.mesh = ctx.read_object_ref(r, True)
@@ -1125,7 +1125,7 @@ class LodMeshResource(MeshResourceBase):
         self.meshes = [LodMeshResourcePart(r, ctx) for _ in range(r.read_var_int())]
 
 class MultiMeshResourcePart:
-    mesh: MeshResourceBase|None
+    mesh: MeshResourceBase|str|None
     transform: tuple[tuple[float]]
 
     def __init__(self, r: Reader, ctx: Context):

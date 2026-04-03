@@ -77,7 +77,7 @@ class Context:
 
             self.object_dict[obj.id] = obj
 
-    def read_object_ref(self, r: Reader, parse: bool=False) -> datatypes.BaseObject|None:
+    def read_object_ref(self, r: Reader, parse: bool=False) -> datatypes.BaseObject|str|None:
         ref_type = r.read(1)[0]
         obj = None
         match ref_type:
@@ -87,11 +87,11 @@ class Context:
                     obj = self.objects[idx-1]
             case 2:
                 id = r.read_string()
-                obj = self.object_dict.get(id)
+                obj = self.object_dict.get(id, id)
             case _:
                 raise RuntimeError(f"Unexpected reference type {ref_type}")
             
-        if obj and parse:
+        if isinstance(obj, datatypes.BaseObject) and parse:
             obj.parse(self)
 
         return obj

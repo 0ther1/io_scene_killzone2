@@ -30,11 +30,49 @@ def prepare_index_array(ia: datatypes.IndexArrayResource):
     ia.indices = [decoders.decode_triangle(ia.data, 6*i) for i in range(ia.count//3)]
     ia.data = None
 
+def apply_bindings(context, obj, arm_obj, bindings: datatypes.SkinnedMeshBoneBindings):
+    context.view_layer.objects.active = arm_obj
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all(action='DESELECT')
+    arm_obj.select_set(True)
+    bpy.ops.object.duplicate()
+    copy_arm = context.view_layer.objects.active
+
+    bpy.ops.object.mode_set(mode='EDIT')
+
+    matrices = dict()
+
+    def traverse(b):
+        matrices[b.name] = b.matrix.copy()
+        for c in b.children:
+            traverse(c)
+
+    for b in (bone for bone in copy_arm.data.edit_bones if bone.parent is None):
+        traverse(b)
+
+    for i, name in enumerate(bindings.bone_names):
+        copy_arm.data.edit_bones[name].matrix = Matrix(bindings.inverse_bind_matrices[i]).transposed().inverted()
+
+    mod = obj.modifiers.new(name="Armature", type="ARMATURE")
+    mod.object = copy_arm
+
+    bpy.ops.object.mode_set(mode='POSE')
+
+    for name, mat in matrices.items():
+        copy_arm.pose.bones[name].matrix = mat
+        bpy.context.view_layer.update()
+
+    bpy.ops.object.mode_set(mode='OBJECT')
+    context.view_layer.objects.active = obj
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+
+    bpy.data.objects.remove(copy_arm, do_unlink=True)
+
 def create_static_mesh_resource(context, sm: datatypes.StaticMeshResource, parent, name_override: str=""):
     primitives = []
 
     for rp in sm.primitives:
-        if not rp or not rp.vertex_array or not rp.index_array:
+        if not isinstance(rp, datatypes.RenderingPrimitiveResource) or not isinstance(rp.vertex_array, datatypes.VertexArrayResource) or not isinstance(rp.index_array, datatypes.IndexArrayResource):
             continue
 
         prepare_vertex_array(rp.vertex_array)
@@ -101,13 +139,25 @@ def create_static_mesh_resource(context, sm: datatypes.StaticMeshResource, paren
 
 def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedMeshResource, parent, name_override: str=""):
     arm = None
+    bindings = None
+    binding_required = False
+
     if rsm.skeleton:
-        arm = create_resource(context, rsm.skeleton, context.scene.collection, bindings=rsm.skinned_mesh_bone_bindings)
+        bindings = (isinstance(rsm.skinned_mesh_bone_bindings, datatypes.SkinnedMeshBoneBindings) and rsm.skinned_mesh_bone_bindings) or None
+        binding_required = bindings != None
+        if isinstance(rsm.skeleton, datatypes.Skeleton):
+            binding_required = binding_required and rsm.skeleton in CREATED_OBJECTS
+            arm = create_resource(context, rsm.skeleton, context.scene.collection, bindings=bindings)
+        elif isinstance(rsm.skeleton, str):
+            for o in bpy.data.objects:
+                if o.type == "ARMATURE" and o.get("kz_id") == rsm.skeleton:
+                    arm = o
+                    break
 
     all_verts = []
     all_weight_maps = []
 
-    if rsm.skin_info:
+    if isinstance(rsm.skin_info, datatypes.RegularSkinnedMeshResourceSkinInfo):
         for p in rsm.skin_info.parts:
             verts = []
             weight_maps = dict()
@@ -142,7 +192,7 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
     primitives = []
 
     for i, rp in enumerate(rsm.primitives):
-        if not rp:
+        if not isinstance(rp, datatypes.RenderingPrimitiveResource):
             continue
 
         verts = all_verts[i]
@@ -150,12 +200,12 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
         uvs = []
         max_vtx = -2
 
-        if rp.index_array:
+        if isinstance(rp.index_array, datatypes.IndexArrayResource):
             prepare_index_array(rp.index_array)
             polygons = rp.index_array.indices
             max_vtx = max(max(polygons, key=lambda p: max(p)))
 
-        if rp.vertex_array:
+        if isinstance(rp.vertex_array, datatypes.VertexArrayResource):
             prepare_vertex_array(rp.vertex_array)
             for sf in rp.vertex_array.stream_fields:
                 for ve in sf.vertex_elements:
@@ -184,7 +234,7 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
 
         weight_maps = all_weight_maps[i]
 
-        bone_names = (rsm.skinned_mesh_bone_bindings and rsm.skinned_mesh_bone_bindings.bone_names) or (rsm.skeleton and (rsm.skeleton.bone_sets or [j.name for j in rsm.skeleton.joints]))
+        bone_names = (isinstance(rsm.skinned_mesh_bone_bindings, datatypes.SkinnedMeshBoneBindings) and rsm.skinned_mesh_bone_bindings.bone_names) or (arm and [b.name for b in arm.data.bones])
 
         if bone_names:
             for bone_index, weights in weight_maps.items():
@@ -210,84 +260,71 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
         main_object.name = name_override or rsm.name or "RegularSkinnedMeshResource"
 
         if arm:
+            if binding_required:
+                apply_bindings(context, main_object, arm, bindings)
+
             mod = main_object.modifiers.new(name="Armature", type="ARMATURE")
             mod.object = arm
+
 
         return main_object
     
     return None
 
 def create_lod_mesh_resource(context, lmr: datatypes.LodMeshResource, parent, name_override: str=""):
-    valid_parts = len([p for p in lmr.meshes if p.mesh and p.mesh not in CREATED_OBJECTS])
-    if valid_parts == 0:
-        return None
-    elif valid_parts == 1:
-        for part in lmr.meshes:
-            if not part.mesh:
-                continue
+    valid_parts = [p for p in lmr.meshes if isinstance(p.mesh, datatypes.LodMeshResourcePart) and p.mesh not in CREATED_OBJECTS]
 
-            return create_resource(context, part.mesh, parent, name_override or lmr.name or "LodMeshResource")
+    if not valid_parts:
+        return None
+    elif len(valid_parts) == 1:
+        return create_resource(context, valid_parts[0].mesh, parent, name_override or lmr.name or "LodMeshResource")
 
     col = bpy.data.collections.new(name_override or lmr.name or "LodMeshResource")
     parent.children.link(col)
 
-    for i, part in enumerate(lmr.meshes):
-        if not part.mesh:
-            continue
-
+    for i, part in enumerate(valid_parts):
         create_resource(context, part.mesh, col, f"LOD {i}")
 
     return col
 
 def create_multi_mesh_resource(context, mmr: datatypes.MultiMeshResource, parent, name_override: str=""):
-    valid_parts = len([p for p in mmr.parts if p.mesh and p.mesh not in CREATED_OBJECTS])
-    if valid_parts == 0:
-        return None
-    elif valid_parts == 1:
-        for part in mmr.parts:
-            if not part.mesh:
-                continue
+    valid_parts = [p for p in mmr.parts if isinstance(p.mesh, datatypes.MultiMeshResourcePart) and p.mesh not in CREATED_OBJECTS]
 
-            return create_resource(context, part.mesh, parent, name_override or mmr.name or "MultiMeshResource")
+    if not valid_parts:
+        return None
+    elif len(valid_parts) == 1:
+        return create_resource(context, valid_parts[0].mesh, parent, name_override or mmr.name or "MultiMeshResource")
 
     col = bpy.data.collections.new(name_override or mmr.name or "MultiMeshResource")
     parent.children.link(col)
 
-    for i, part in enumerate(mmr.parts):
-        if not part.mesh:
-            continue
-
+    for i, part in enumerate(valid_parts):
         create_resource(context, part.mesh, col, f"Part {i}")
 
     return col
 
 def create_switch_mesh_resource(context, smr: datatypes.SwitchMeshResource, parent, name_override: str=""):
-    valid_parts = len([p for p in smr.parts if p.mesh and p.mesh not in CREATED_OBJECTS])
-    if valid_parts == 0:
-        return None
-    elif smr.parts_use_the_same_mesh or valid_parts == 1:
-        for p in smr.parts:
-            if not p.mesh:
-                continue
+    valid_parts = [p for p in smr.parts if isinstance(p.mesh, datatypes.SwitchMeshResourcePart) and p.mesh not in CREATED_OBJECTS]
 
-            return create_resource(context, p.mesh, parent, name_override or smr.name or p.key)
+    if not valid_parts:
+        return None
+    elif smr.parts_use_the_same_mesh or len(valid_parts) == 1:
+        return create_resource(context, valid_parts[0].mesh, parent, name_override or smr.name or p.key)
     
     col = bpy.data.collections.new(name_override or smr.name or "SwitchMeshResource")
     parent.children.link(col)
 
-    for p in smr.parts:
-        if not p.mesh:
-            continue
-
+    for p in valid_parts:
         create_resource(context, p.mesh, col, p.key)
 
     return col
 
-def create_skeleton(context, s: datatypes.Skeleton, parent, name_override: str = "", *, bindings: datatypes.SkinnedMeshBoneBindings=None):
+def create_skeleton(context, s: datatypes.Skeleton, parent, name_override: str = "", *, bindings: datatypes.SkinnedMeshBoneBindings=None, **kwargs):
     name = name_override or s.name or "Skeleton"
 
     arm = bpy.data.armatures.new(name)
     obj = bpy.data.objects.new(name, arm)
+    obj["kz_id"] = s.id
     parent.objects.link(obj)
 
     context.view_layer.objects.active = obj
@@ -325,7 +362,7 @@ def create_skeleton(context, s: datatypes.Skeleton, parent, name_override: str =
 
     return obj
 
-def create_texture(context, tex: datatypes.Texture, textures_dir: str=""):
+def create_texture(context, tex: datatypes.Texture, *, textures_dir: str="", **kwargs):
     if tex.format.height == 1:
         return None
     
