@@ -30,7 +30,7 @@ def prepare_index_array(ia: datatypes.IndexArrayResource):
     ia.indices = [decoders.decode_triangle(ia.data, 6*i) for i in range(ia.count//3)]
     ia.data = None
 
-def apply_bindings_to_mesh(context, obj, arm_obj, bindings: datatypes.SkinnedMeshBoneBindings):
+def apply_bindings_to_armature(context, obj, arm_obj, bindings: datatypes.SkinnedMeshBoneBindings):
     context.view_layer.objects.active = arm_obj
     bpy.ops.object.mode_set(mode='OBJECT')
     bpy.ops.object.select_all(action='DESELECT')
@@ -40,33 +40,25 @@ def apply_bindings_to_mesh(context, obj, arm_obj, bindings: datatypes.SkinnedMes
 
     bpy.ops.object.mode_set(mode='EDIT')
 
-    matrices = dict()
-
-    def traverse(b):
-        matrices[b.name] = b.matrix.copy()
-        for c in b.children:
-            traverse(c)
-
-    for b in (bone for bone in copy_arm.data.edit_bones if bone.parent is None):
-        traverse(b)
-
     for i, name in enumerate(bindings.bone_names):
         copy_arm.data.edit_bones[name].matrix = Matrix(bindings.inverse_bind_matrices[i]).transposed().inverted()
 
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    for arm in (obj for obj in bpy.data.objects if obj.type == "ARMATURE" and len(obj.data.bones) == len(copy_arm.data.bones) and obj is not copy_arm):
+        equals = True
+        for b in arm.data.bones:
+            if b.matrix_local != copy_arm.data.bones[b.name].matrix_local:
+                equals = False
+                break
+
+        if equals:
+            bpy.data.objects.remove(copy_arm, do_unlink=True)
+            copy_arm = arm
+            break
+
     mod = obj.modifiers.new(name="Armature", type="ARMATURE")
     mod.object = copy_arm
-
-    bpy.ops.object.mode_set(mode='POSE')
-
-    for name, mat in matrices.items():
-        copy_arm.pose.bones[name].matrix = mat
-        bpy.context.view_layer.update()
-
-    bpy.ops.object.mode_set(mode='OBJECT')
-    context.view_layer.objects.active = obj
-    bpy.ops.object.modifier_apply(modifier=mod.name)
-
-    bpy.data.objects.remove(copy_arm, do_unlink=True)
 
 def apply_render_effect(mat, fx: datatypes.RenderEffectResource):
     nodes = mat.node_tree.nodes
@@ -82,7 +74,7 @@ def apply_render_effect(mat, fx: datatypes.RenderEffectResource):
                 tex_image = nodes.new(type="ShaderNodeTexImage")
                 tex_image.image = CREATED_OBJECTS[tb.texture]
 
-                mat.node_tree.links.new(tex_image.outputs["Color"], bsdf.inputs["Base Color"])
+                links.new(tex_image.outputs["Color"], bsdf.inputs["Base Color"])
 
 def create_static_mesh_resource(context, sm: datatypes.StaticMeshResource, parent, name_override: str="", **kwargs):
     primitives = []
@@ -165,8 +157,7 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
         bindings = (isinstance(rsm.skinned_mesh_bone_bindings, datatypes.SkinnedMeshBoneBindings) and rsm.skinned_mesh_bone_bindings) or None
         binding_required = apply_bindings and bindings != None
         if isinstance(rsm.skeleton, datatypes.Skeleton):
-            binding_required = binding_required and rsm.skeleton in CREATED_OBJECTS
-            arm = create_resource(context, rsm.skeleton, context.scene.collection, bindings=bindings)
+            arm = create_resource(context, rsm.skeleton, context.scene.collection)
         elif isinstance(rsm.skeleton, str):
             for o in bpy.data.objects:
                 if o.type == "ARMATURE" and o.get("kz_id") == rsm.skeleton:
@@ -283,10 +274,10 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
 
         if arm:
             if binding_required:
-                apply_bindings_to_mesh(context, main_object, arm, bindings)
-
-            mod = main_object.modifiers.new(name="Armature", type="ARMATURE")
-            mod.object = arm
+                apply_bindings_to_armature(context, main_object, arm, bindings)
+            else:
+                mod = main_object.modifiers.new(name="Armature", type="ARMATURE")
+                mod.object = arm
 
         for i, fx in enumerate(rsm.render_effects):
             if not isinstance(fx, datatypes.RenderEffectResource):
@@ -361,8 +352,8 @@ def create_skeleton(context, s: datatypes.Skeleton, parent, name_override: str =
     arm.display_type = "STICK"
 
     bind_matrices = None
-    if bindings:
-        bind_matrices = {name: bindings.inverse_bind_matrices[i] for i, name in enumerate(bindings.bone_names)}
+    # if bindings:
+    #     bind_matrices = {name: bindings.inverse_bind_matrices[i] for i, name in enumerate(bindings.bone_names)}
 
     for j in s.joints:
         bone = arm.edit_bones.new(j.name)
@@ -387,6 +378,18 @@ def create_skeleton(context, s: datatypes.Skeleton, parent, name_override: str =
 
     bpy.ops.object.mode_set(mode="OBJECT")
     context.view_layer.objects.active = None
+
+    for a in (o for o in bpy.data.objects if o.type == "ARMATURE" and len(o.data.bones) == len(obj.data.bones) and o is not obj):
+        equals = True
+        for b in a.data.bones:
+            if b.matrix_local != obj.data.bones[b.name].matrix_local:
+                equals = False
+                break
+
+        if equals:
+            bpy.data.objects.remove(obj, do_unlink=True)
+            obj = a
+            break
 
     return obj
 

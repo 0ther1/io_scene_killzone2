@@ -37,7 +37,7 @@ class ImportKillzone2Core(Operator, ImportHelper):
 
     apply_bindings: BoolProperty(
         name="Apply skeleton bindings",
-        description="Apply bone bindings to mesh to fix misaligned rest pose",
+        description="Apply bone bindings to fix misaligned rest pose",
         default=True,
     )
 
