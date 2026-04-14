@@ -48,7 +48,8 @@ def apply_bindings_to_armature(context, obj, arm_obj, bindings: datatypes.Skinne
     for arm in (obj for obj in bpy.data.objects if obj.type == "ARMATURE" and len(obj.data.bones) == len(copy_arm.data.bones) and obj is not copy_arm):
         equals = True
         for b in arm.data.bones:
-            if b.matrix_local != copy_arm.data.bones[b.name].matrix_local:
+            other_bone = copy_arm.data.bones.get(b.name)
+            if other_bone is None or b.matrix_local != other_bone.matrix_local:
                 equals = False
                 break
 
@@ -99,7 +100,7 @@ def create_static_mesh_resource(context, sm: datatypes.StaticMeshResource, paren
                 elif ve.vertex_element == datatypes.EVertexElement.VtxElemPos:
                     verts = sf.values[ve][rp.index_offset:rp.index_offset+max_vtx+1]
 
-        if not verts:
+        if not verts or not polygons:
             continue
 
         if isinstance(verts[0][0], tuple):
@@ -132,7 +133,7 @@ def create_static_mesh_resource(context, sm: datatypes.StaticMeshResource, paren
 
     if primitives:
         main_object = primitives[0]
-        if len(primitives) > 0:
+        if len(primitives) > 1:
             context.view_layer.objects.active = main_object
             bpy.ops.object.select_all(action='DESELECT')
             for obj in primitives:
@@ -206,6 +207,10 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
             continue
 
         verts = all_verts[i]
+
+        if not verts:
+            continue
+
         polygons = []
         uvs = []
         max_vtx = -2
@@ -223,6 +228,9 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
                         uvs.append(sf.values[ve][rp.index_offset:rp.index_offset+max_vtx+1])
 
         name = "RenderingPrimitiveResource"
+
+        if not polygons:
+            continue
 
         mesh = bpy.data.meshes.new(name)
         mesh.from_pydata(verts, [], polygons)
@@ -260,7 +268,7 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
 
     if primitives:
         main_object = primitives[0]
-        if len(primitives) > 0:
+        if len(primitives) > 1:
             context.view_layer.objects.active = main_object
             bpy.ops.object.select_all(action='DESELECT')
             for obj in primitives:
@@ -338,7 +346,7 @@ def create_switch_mesh_resource(context, smr: datatypes.SwitchMeshResource, pare
 
     return col
 
-def create_skeleton(context, s: datatypes.Skeleton, parent, name_override: str = "", *, bindings: datatypes.SkinnedMeshBoneBindings=None, **kwargs):
+def create_skeleton(context, s: datatypes.Skeleton, parent, name_override: str = "", **kwargs):
     name = name_override or s.name or "Skeleton"
 
     arm = bpy.data.armatures.new(name)
@@ -351,10 +359,6 @@ def create_skeleton(context, s: datatypes.Skeleton, parent, name_override: str =
 
     arm.display_type = "STICK"
 
-    bind_matrices = None
-    # if bindings:
-    #     bind_matrices = {name: bindings.inverse_bind_matrices[i] for i, name in enumerate(bindings.bone_names)}
-
     for j in s.joints:
         bone = arm.edit_bones.new(j.name)
         bone.head = (0, 0, 0)
@@ -362,16 +366,13 @@ def create_skeleton(context, s: datatypes.Skeleton, parent, name_override: str =
 
         parent = (j.parent_index > -1 and arm.edit_bones[j.parent_index]) or (j.parent_name and arm.edit_bones[j.parent_name]) or None
 
-        if bind_matrices:
-            mat = Matrix(bind_matrices[j.name]).transposed().inverted()
-        else:
-            pos = Vector(j.translation)
-            rot = Quaternion((j.rotation[3], j.rotation[0], j.rotation[1], j.rotation[2]))
-            mat = rot.to_matrix().to_4x4()
-            mat.translation = pos
+        pos = Vector(j.translation)
+        rot = Quaternion((j.rotation[3], j.rotation[0], j.rotation[1], j.rotation[2]))
+        mat = rot.to_matrix().to_4x4()
+        mat.translation = pos
 
-            if parent:
-                mat = parent.matrix @ mat
+        if parent:
+            mat = parent.matrix @ mat
 
         bone.matrix = mat
         bone.parent = parent
@@ -382,7 +383,9 @@ def create_skeleton(context, s: datatypes.Skeleton, parent, name_override: str =
     for a in (o for o in bpy.data.objects if o.type == "ARMATURE" and len(o.data.bones) == len(obj.data.bones) and o is not obj):
         equals = True
         for b in a.data.bones:
-            if b.matrix_local != obj.data.bones[b.name].matrix_local:
+            other_bone = obj.data.bones.get(b.name)
+                
+            if other_bone is None or b.matrix_local != other_bone.matrix_local:
                 equals = False
                 break
 
