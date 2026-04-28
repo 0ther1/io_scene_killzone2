@@ -1031,15 +1031,17 @@ class VertexSkin:
     z: int
     weight0: int
     weight1: int
+    weight2: int
     n: tuple[int]
     bone0: int
     bone1: int
     bone2: int
+    bone3: int
 
     def __init__(self, r: Reader):
-        self.x, self.y, self.z, self.weight0, self.weight1 = r.unpack(">3h2B")
+        self.x, self.y, self.z, self.weight0, self.weight1, self.weight2 = r.unpack(">3h3B")
         self.n = r.unpack(">3b")
-        self.bone0, self.bone1, self.bone2 = r.unpack(">3B")
+        self.bone0, self.bone1, self.bone2, self.bone3 = r.unpack(">4B")
 
 class VertexSkinNBT(VertexSkin):
     b: tuple[int]
@@ -1121,7 +1123,7 @@ class RegularSkinnedMeshResource(SkinnedMeshResource):
     def _parse(self, r: Reader, ctx: Context):
         super()._parse(r, ctx)     
         if ctx.version == 173:
-            r.skip(14)
+            r.skip(20)
         else:
             r.skip(19)
 
