@@ -16,10 +16,10 @@ from bpy.types import Operator
 from .importer import load_core
 
 
-class ImportKillzone2Core(Operator, ImportHelper):
-    """Import Killzone 2, 3 PS3 *.core files"""
-    bl_idname = "import_scene.killzone2_core"
-    bl_label = "Import Killzone 2, 3 PS3 *.core"
+class ImportUntilDawnBetaCore(Operator, ImportHelper):
+    """Import Until Dawn beta PS3 *.core files"""
+    bl_idname = "import_scene.until_dawn_beta_core"
+    bl_label = "Import Until Dawn beta PS3 *.core"
 
     filename_ext = ".core"
 
@@ -46,16 +46,16 @@ class ImportKillzone2Core(Operator, ImportHelper):
 
 
 def menu_func_import(self, context):
-    self.layout.operator(ImportKillzone2Core.bl_idname, text="Killzone 2, 3 *.core")
+    self.layout.operator(ImportUntilDawnBetaCore.bl_idname, text="Until Dawn beta *.core")
 
 
 def register():
-    bpy.utils.register_class(ImportKillzone2Core)
+    bpy.utils.register_class(ImportUntilDawnBetaCore)
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
 
 
 def unregister():
-    bpy.utils.unregister_class(ImportKillzone2Core)
+    bpy.utils.unregister_class(ImportUntilDawnBetaCore)
     bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
 
 

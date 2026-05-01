@@ -1062,24 +1062,31 @@ class VertexSkin:
     z: int
     weight0: int
     weight1: int
-    weight2: int
+    weight2: int|None
     n: tuple[int]
     bone0: int
     bone1: int
     bone2: int
-    bone3: int
+    bone3: int|None
 
-    def __init__(self, r: Reader):
-        self.x, self.y, self.z, self.weight0, self.weight1, self.weight2 = r.unpack(">3h3B")
+    def __init__(self, r: Reader, extended: bool=False):
+        self.weight2 = None
+        self.bone3 = None
+
+        self.x, self.y, self.z, self.weight0, self.weight1 = r.unpack(">3h2B")
+        if extended:
+            self.weight2 = r.unpack(">B")[0]
         self.n = r.unpack(">3b")
-        self.bone0, self.bone1, self.bone2, self.bone3 = r.unpack(">4B")
+        self.bone0, self.bone1, self.bone2 = r.unpack(">3B")
+        if extended:
+            self.bone3 = r.unpack(">B")[0]
 
 class VertexSkinNBT(VertexSkin):
     b: tuple[int]
     t: tuple[int]
 
-    def __init__(self, r: Reader):
-        super().__init__(r)
+    def __init__(self, r: Reader, extended: bool=False):
+        super().__init__(r, extended)
         self.b = r.unpack(">3b")
         self.t = r.unpack(">3b")
 
@@ -1088,11 +1095,13 @@ class PrimitiveSkinInfo:
     vertices_skin: list[VertexSkin]
     vertices_skin_nbt: list[VertexSkinNBT]
 
-    def __init__(self, r: Reader):
+    def __init__(self, r: Reader, extended: bool=False):
         self.type = r.unpack(">i")[0]
+        if self.type not in (0, 1):
+            raise ValueError()
         r.skip(16)
-        self.vertices_skin = [VertexSkin(r) for _ in range(r.read_var_int())]
-        self.vertices_skin_nbt = [VertexSkinNBT(r) for _ in range(r.read_var_int())]
+        self.vertices_skin = [VertexSkin(r, extended) for _ in range(r.read_var_int())]
+        self.vertices_skin_nbt = [VertexSkinNBT(r, extended) for _ in range(r.read_var_int())]
 
 class VertexDeltaDeformation:
     delta_pos: tuple[float]
@@ -1132,8 +1141,13 @@ class RegularSkinnedMeshResourceSkinInfo(BaseObject):
 
     def _parse(self, r: Reader, ctx: Context):
         super()._parse(r, ctx)
-        print("RegularSkinnedMeshResourceSkinInfo @", self.data_offset+r.tell())
-        self.parts = [PrimitiveSkinInfo(r) for _ in range(r.read_var_int())]
+        count = r.read_var_int()
+        pos = r.tell()
+        try:
+            self.parts = [PrimitiveSkinInfo(r, True) for _ in range(count)]
+        except Exception:
+            r.f.seek(pos)
+            self.parts = [PrimitiveSkinInfo(r) for _ in range(count)]
         self.blend_target_deforms = [BlendTargetDeformation(r, ctx) for _ in range(r.read_var_int())]
 
 class SkinnedMeshBoneBindings(BaseObject):

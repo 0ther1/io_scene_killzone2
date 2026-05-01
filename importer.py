@@ -192,20 +192,29 @@ def create_regular_skinned_mesh_resource(context, rsm: datatypes.RegularSkinnedM
                         weight_maps[vs.bone1] = bone_weights
 
                     bone_weights.append((i, vs.weight1 / 255))
-                if vs.bone2:
-                    bone_weights = weight_maps.get(vs.bone2)
-                    if not bone_weights:
-                        bone_weights = []
-                        weight_maps[vs.bone2] = bone_weights
+                if vs.bone3 is None:
+                    if vs.bone2:
+                        bone_weights = weight_maps.get(vs.bone2)
+                        if not bone_weights:
+                            bone_weights = []
+                            weight_maps[vs.bone2] = bone_weights
 
-                    bone_weights.append((i, vs.weight2 / 255))
-                if vs.bone3:
-                    bone_weights = weight_maps.get(vs.bone3)
-                    if not bone_weights:
-                        bone_weights = []
-                        weight_maps[vs.bone3] = bone_weights
+                        bone_weights.append((i, (255 - vs.weight0 - vs.weight1) / 255)) 
+                else:
+                    if vs.bone2:
+                        bone_weights = weight_maps.get(vs.bone2)
+                        if not bone_weights:
+                            bone_weights = []
+                            weight_maps[vs.bone2] = bone_weights
 
-                    bone_weights.append((i, (255 - vs.weight0 - vs.weight1 - vs.weight2) / 255))
+                        bone_weights.append((i, vs.weight2 / 255))
+                    if vs.bone3:
+                        bone_weights = weight_maps.get(vs.bone3)
+                        if not bone_weights:
+                            bone_weights = []
+                            weight_maps[vs.bone3] = bone_weights
+
+                        bone_weights.append((i, (255 - vs.weight0 - vs.weight1 - vs.weight2) / 255))
 
     primitives = []
 
