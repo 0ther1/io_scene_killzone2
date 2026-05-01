@@ -167,7 +167,7 @@ class Light(GeometryObject):
         if ctx.version == 173:
             r.skip(29)
             ctx.skip_object_ref(r, 2)
-            r.skip(17)
+            r.skip(26)
         else:
             r.skip(13)
             ctx.skip_object_ref(r)
@@ -211,7 +211,7 @@ class PhysicsCollisionInstance(BaseObject, PhysicsInstance):
         BaseObject.read(self, r, ctx)
         PhysicsInstance.read(self, r, ctx)
         if ctx.version == 173:
-            r.skip(89)
+            r.skip(92)
         else:
             r.skip(97)
 
@@ -229,6 +229,8 @@ class CollisionTrigger(PhysicsCollisionInstance, CollisionInstance):
             PhysicsCollisionInstance.read(self, r, ctx)
             ctx.skip_string_index(r)
             r.skip(5)
+            ctx.skip_object_ref(r, r.read_var_int())
+            r.skip(29)
         else:
             CollisionInstance.read(self, r, ctx)
             r.skip(4)
@@ -513,7 +515,7 @@ class PhonemeBoneChannel(BaseObject):
             return
         r.skip(4)
         for _ in range(r.read_var_int()):
-            r.skip(16)
+            r.skip(28)
         for _ in range(r.read_var_int()):
             r.skip(4)
 
@@ -585,7 +587,7 @@ class RenderZone(BaseObject, Shape2DExtrusion):
             r.skip(12)
         ctx.skip_object_ref(r)
         r.skip(45)
-        ctx.skip_object_ref(r)
+        ctx.skip_object_ref(r, 2)
         r.skip(4)
 
 class Zone(BaseObject):
@@ -712,6 +714,35 @@ class Occluder(BaseObject):
         ctx.skip_string_index(r)
         r.skip(1)
         r.skip_array(12)
+
+# Until dawn
+
+class MovementIKResource(BaseObject):
+    def read(self, r: Reader, ctx: Context):
+        super().read(r, ctx)
+        ctx.skip_string_index(r)
+        r.skip(2)
+        ctx.skip_string_index(r, count=2)
+        ctx.skip_object_ref(r)
+        r.skip(80)
+
+class WWiseSoundZoneInstance(BaseObject):
+    def read(self, r: Reader, ctx: Context):
+        super().read(r, ctx)   
+        r.skip(64)
+        ctx.skip_object_ref(r)
+
+class EmitterWWiseSoundResource(BaseObject):
+    def read(self, r: Reader, ctx: Context):
+        super().read(r, ctx)
+        ctx.skip_string_index(r)
+        r.skip(1+3)
+
+class TriggeredCameraInfo(BaseObject):
+    def read(self, r: Reader, ctx: Context):
+        super().read(r, ctx)      
+        ctx.skip_string_index(r)
+        r.skip(8)        
 
 
 class EVertexElementStorageType(IntEnum):
@@ -1101,6 +1132,7 @@ class RegularSkinnedMeshResourceSkinInfo(BaseObject):
 
     def _parse(self, r: Reader, ctx: Context):
         super()._parse(r, ctx)
+        print("RegularSkinnedMeshResourceSkinInfo @", self.data_offset+r.tell())
         self.parts = [PrimitiveSkinInfo(r) for _ in range(r.read_var_int())]
         self.blend_target_deforms = [BlendTargetDeformation(r, ctx) for _ in range(r.read_var_int())]
 
