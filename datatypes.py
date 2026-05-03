@@ -735,8 +735,7 @@ class WWiseSoundZoneInstance(BaseObject):
 class EmitterWWiseSoundResource(BaseObject):
     def read(self, r: Reader, ctx: Context):
         super().read(r, ctx)
-        ctx.skip_string_index(r)
-        r.skip(1+3)
+        ctx.skip_string_index(r, count=3)
 
 class TriggeredCameraInfo(BaseObject):
     def read(self, r: Reader, ctx: Context):
